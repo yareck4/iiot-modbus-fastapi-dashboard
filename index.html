@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Industrial IIoT 4.0</title>
+    <!-- Librería de gráficas Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; font-family: sans-serif; padding: 30px; }
+        .container { max-width: 900px; margin: auto; }
+        .header { border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 25px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 25px; }
+        .card { background-color: #1e293b; padding: 20px; border: 1px solid #334155; border-radius: 8px; }
+        .value { font-size: 3rem; font-weight: bold; color: #ffffff; margin: 10px 0; }
+        .pieces { color: #10b981; }
+        .chart-container { background-color: #1e293b; padding: 20px; border-radius: 8px; border: 1px solid #334155; height: 300px; }
+        .status { font-weight: bold; font-size: 0.8rem; color: #10b981; }
+        .alert { color: #ef4444; animation: pulse 1s infinite; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1 style="color: #10b981; margin: 0;">🏭 IIoT Plant Telemetry Dashboard</h1>
+            <p style="color: #94a3b8; margin: 5px 0 0 0;">Protocolo: Modbus TCP (Puerto 5020) ➔ Gateway: FastAPI</p>
+        </div>
+
+        <div class="grid">
+            <!-- Tarjeta Temperatura -->
+            <div class="card">
+                <div style="color: #94a3b8;">Temperatura del Motor</div>
+                <div class="value"><span id="temp-value">--</span> °C</div>
+                <div id="temp-status" class="status">Conectando con API Gateway...</div>
+            </div>
+
+            <!-- Tarjeta Producción -->
+            <div class="card">
+                <div style="color: #94a3b8;">Producción Total</div>
+                <div class="value pieces"><span id="pieces-value">--</span></div>
+                <div style="color: #94a3b8; font-size: 0.8rem;">Adquisición en tiempo real activada</div>
+            </div>
+        </div>
+
+        <!-- Gráfica -->
+        <div class="card" style="height: 350px;">
+            <h3 style="margin-top: 0; color: #cbd5e1;">📈 Historial de Temperatura</h3>
+            <div style="position: relative; height: 280px;">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 1. Configuración básica de la gráfica
+        const ctx = document.getElementById('tempChart').getContext('2d');
+        const tempChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Temperatura (°C)',
+                    data: [],
+                    borderColor: '#10b981',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { min: 40, max: 100 }
+                }
+            }
+        });
+
+        // 2. Función de adquisición (Consumo de tu backend de FastAPI)
+        async function consultarAPI() {
+            try {
+                // Hacemos la petición explícita a tu backend local
+                const respuesta = await fetch('http://127.0.0.1:8000/api/telemetria');
+                const resultado = await respuesta.json();
+
+                if (resultado.status === 'success') {
+                    const datos = resultado.data;
+                    
+                    // Inyectamos los datos numéricos en el HTML
+                    document.getElementById('temp-value').innerText = datos.motor_temperatura_celsius;
+                    document.getElementById('pieces-value').innerText = datos.produccion_total_piezas + " piezas";
+                    
+                    // Lógica visual para las alertas analógicas de planta
+                    const statusDiv = document.getElementById('temp-status');
+                    if (datos.estado_sistema === 'ALERTA_SOBRECALENTAMIENTO') {
+                        statusDiv.innerText = "🚨 ALERTA: SOBRECALENTAMIENTO";
+                        statusDiv.className = "status alert";
+                    } else {
+                        statusDiv.innerText = "✅ OPERANDO NORMAL";
+                        statusDiv.className = "status";
+                    }
+
+                    // Añadir datos a la gráfica de líneas
+                    const ahora = new Date().toLocaleTimeString();
+                    tempChart.data.labels.push(ahora);
+                    tempChart.data.datasets[0].data.push(datos.motor_temperatura_celsius);
+
+                    // Mantener solo los últimos 10 datos en pantalla
+                    if (tempChart.data.labels.length > 10) {
+                        tempChart.data.labels.shift();
+                        tempChart.data.datasets[0].data.shift();
+                    }
+                    tempChart.update();
+                }
+            } catch (error) {
+                console.error("Error de enlace:", error);
+                document.getElementById('temp-status').innerText = "❌ ERROR: API Gateway fuera de línea";
+                document.getElementById('temp-status').className = "status alert";
+            }
+        }
+
+        // Consultar cada segundo automáticamente
+        setInterval(consultarAPI, 1000);
+        consultarAPI();
+    </script>
+</body>
+</html>
